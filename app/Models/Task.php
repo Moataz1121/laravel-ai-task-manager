@@ -32,5 +32,13 @@ class Task extends Model
             'priority' => TaskPriority::class,
         ];
     }
+
+    /**
+     * Get the AI analysis associated with the task.
+     */
+    public function analysis(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(TaskAnalysis::class);
+    }
 }
 
