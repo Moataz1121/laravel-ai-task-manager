@@ -13,10 +13,16 @@ class AnalyzeTaskTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_can_analyze_task_using_ai(): void
+    public function test_can_analyze_task_and_persist_structured_analysis(): void
     {
         TaskAnalyzerAgent::fake([
-            "1. Summary: Refactor authentication module.\n2. Recommended Approach: Use OAuth2.\n3. Main Implementation Steps: Step 1, Step 2.\n4. Complexity: Medium.\n5. Risks: Token expiration edge cases.",
+            [
+                'summary' => 'Refactor authentication module to modern OAuth2.',
+                'complexity' => 'medium',
+                'estimated_hours' => 12,
+                'steps' => ['Install Socialite', 'Configure credentials', 'Add callbacks'],
+                'risks' => ['Token expiration edge cases'],
+            ],
         ]);
 
         $task = Task::create([
@@ -31,11 +37,63 @@ class AnalyzeTaskTest extends TestCase
         $response->assertStatus(200)
             ->assertJson([
                 'status' => 'success',
-                'task_id' => $task->id,
-                'analysis' => "1. Summary: Refactor authentication module.\n2. Recommended Approach: Use OAuth2.\n3. Main Implementation Steps: Step 1, Step 2.\n4. Complexity: Medium.\n5. Risks: Token expiration edge cases.",
+                'data' => [
+                    'task_id' => $task->id,
+                    'summary' => 'Refactor authentication module to modern OAuth2.',
+                    'complexity' => 'medium',
+                    'estimated_hours' => 12,
+                    'steps' => ['Install Socialite', 'Configure credentials', 'Add callbacks'],
+                    'risks' => ['Token expiration edge cases'],
+                ],
             ]);
 
+        $this->assertDatabaseHas('task_analyses', [
+            'task_id' => $task->id,
+            'summary' => 'Refactor authentication module to modern OAuth2.',
+            'complexity' => 'medium',
+            'estimated_hours' => 12,
+        ]);
+
         TaskAnalyzerAgent::assertPromptedTimes(1);
+    }
+
+    public function test_reanalyzing_task_updates_existing_analysis_without_duplicates(): void
+    {
+        TaskAnalyzerAgent::fake([
+            [
+                'summary' => 'Initial analysis',
+                'complexity' => 'low',
+                'estimated_hours' => 4,
+                'steps' => ['Step 1'],
+                'risks' => ['Risk 1'],
+            ],
+            [
+                'summary' => 'Updated analysis',
+                'complexity' => 'high',
+                'estimated_hours' => 16,
+                'steps' => ['Step 1', 'Step 2'],
+                'risks' => ['Risk 1', 'Risk 2'],
+            ],
+        ]);
+
+        $task = Task::create([
+            'title' => 'Task Title',
+            'status' => TaskStatus::Pending,
+            'priority' => TaskPriority::Low,
+        ]);
+
+        $this->postJson("/api/tasks/{$task->id}/analyze");
+        $this->assertDatabaseCount('task_analyses', 1);
+
+        $this->postJson("/api/tasks/{$task->id}/analyze");
+        $this->assertDatabaseCount('task_analyses', 1);
+
+        $this->assertDatabaseHas('task_analyses', [
+            'task_id' => $task->id,
+            'summary' => 'Updated analysis',
+            'complexity' => 'high',
+            'estimated_hours' => 16,
+        ]);
     }
 
     public function test_returns_404_when_analyzing_non_existent_task(): void
@@ -45,4 +103,5 @@ class AnalyzeTaskTest extends TestCase
         $response->assertStatus(404);
     }
 }
+
 
