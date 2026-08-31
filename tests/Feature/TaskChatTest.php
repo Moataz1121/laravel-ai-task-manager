@@ -53,6 +53,7 @@ class TaskChatTest extends TestCase
 
         // Second message
         $secondResponse = $this->postJson("/api/tasks/{$task->id}/chat", [
+            'conversation_id' => $conversationId,
             'message' => 'What about security?',
         ]);
 
