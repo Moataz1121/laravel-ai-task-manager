@@ -5,6 +5,9 @@ namespace App\Models;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Laravel\Ai\Models\Conversation;
 
 class Task extends Model
 {
@@ -36,9 +39,16 @@ class Task extends Model
     /**
      * Get the AI analysis associated with the task.
      */
-    public function analysis(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function analysis(): HasOne
     {
         return $this->hasOne(TaskAnalysis::class);
     }
-}
 
+    /**
+     * Get all AI conversations associated with the task.
+     */
+    public function conversations(): MorphMany
+    {
+        return $this->morphMany(Conversation::class, 'participant');
+    }
+}
