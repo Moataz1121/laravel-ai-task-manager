@@ -65,6 +65,28 @@ class TaskChatService
     }
 
     /**
+     * Stream an AI chat response for a task conversation.
+     * If conversation_id is provided, verify it belongs to the task and continue it.
+     * If omitted, explicitly start a brand new conversation for the task.
+     */
+    public function streamChat(Task $task, string $message, ?string $conversationId = null): \Laravel\Ai\Responses\StreamableAgentResponse
+    {
+        $agent = TaskChatAgent::make();
+
+        if ($conversationId !== null) {
+            $this->verifyConversationBelongsToTask($task, $conversationId);
+
+            return $agent
+                ->continue($conversationId, as: $task)
+                ->stream($message);
+        }
+
+        return $agent
+            ->forParticipant($task)
+            ->stream($message);
+    }
+
+    /**
      * Verify that the given conversation_id belongs to the specified task.
      *
      * @throws ValidationException

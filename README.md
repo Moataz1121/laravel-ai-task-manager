@@ -1,58 +1,196 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Laravel AI Task Manager
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+An API-only Laravel application integrating the official `laravel/ai` SDK with Google Gemini (`gemini-3.1-flash-lite`) for intelligent task management, structured analysis, multi-thread chat conversations, and real-time Server-Sent Events (SSE) streaming.
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Features Implemented
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+### PART 1 — Project Setup & AI Test Endpoint
+- Integrated `laravel/ai` package with Google Gemini provider.
+- Created `AiTestController` & `AiTestAgent` verifying connectivity via `GET /api/ai-test`.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+### PART 2 — Tasks CRUD
+- RESTful CRUD endpoints for `Task` resource (`GET`, `POST`, `PUT`, `DELETE /api/tasks`).
+- Enums: `TaskStatus` (`pending`, `in_progress`, `completed`), `TaskPriority` (`low`, `medium`, `high`).
+- Input validation via Laravel Form Requests (`StoreTaskRequest`, `UpdateTaskRequest`).
+- Structured response serialization via `TaskResource`.
 
-## Learning Laravel
+### PART 3 & PART 4 — AI Task Analyzer & Structured Output Persistence
+- `TaskAnalyzerAgent` implementing `Laravel\Ai\Contracts\HasStructuredOutput`.
+- Schema definition:
+  - `summary`: string
+  - `complexity`: `low` | `medium` | `high`
+  - `estimated_hours`: integer
+  - `steps`: array of strings
+  - `risks`: array of strings
+- `TaskAnalysis` model and database table (`task_analyses`) linked to `Task` via `hasOne` relationship.
+- Validates structured AI output with `Validator` and persists/updates records in database via `POST /api/tasks/{task}/analyze`.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+### PART 5 — AI Chat & Multiple Conversations
+- `TaskChatAgent` implementing `Conversational` and `RemembersConversations`.
+- Contextualized system instructions containing task title, description, status, and priority.
+- Supports **multiple independent conversation threads per task** using `agent_conversations` and `agent_conversation_messages`.
+- Ownership verification preventing cross-task conversation access.
+- Endpoints:
+  - `GET /api/tasks/{task}/conversations` — List conversations belonging to a task.
+  - `POST /api/tasks/{task}/conversations` — Explicitly create a new conversation thread.
+  - `POST /api/tasks/{task}/chat` — Continue an existing conversation or start a new thread.
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+### PART 6 — Real-time AI Streaming
+- Stream AI chat responses in real-time using Laravel AI SDK `StreamableAgentResponse`.
+- Streams Server-Sent Events (`text/event-stream; charset=utf-8`) compatible with frontend EventSource, React, and Flutter clients.
+- Maintains complete conversation history and auto-saves the full aggregated AI response to database upon stream completion.
+- Endpoint: `POST /api/tasks/{task}/chat/stream`.
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+---
 
-## Agentic Development
+## API Documentation & cURL Reference
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
+### 1. Test AI Connectivity
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+curl -X GET http://127.0.0.1:8000/api/ai-test \
+  -H "Accept: application/json"
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+### 2. Create a Task
+```bash
+curl -X POST http://127.0.0.1:8000/api/tasks \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "title": "Implement OAuth2 Authentication",
+    "description": "Add Google and GitHub OAuth logins using Socialite",
+    "status": "in_progress",
+    "priority": "high"
+  }'
+```
 
-## Contributing
+### 3. List All Tasks
+```bash
+curl -X GET http://127.0.0.1:8000/api/tasks \
+  -H "Accept: application/json"
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### 4. Fetch a Single Task
+```bash
+curl -X GET http://127.0.0.1:8000/api/tasks/1 \
+  -H "Accept: application/json"
+```
 
-## Code of Conduct
+### 5. Update a Task
+```bash
+curl -X PUT http://127.0.0.1:8000/api/tasks/1 \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "status": "completed"
+  }'
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### 6. Delete a Task
+```bash
+curl -X DELETE http://127.0.0.1:8000/api/tasks/1 \
+  -H "Accept: application/json"
+```
 
-## Security Vulnerabilities
+---
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### 7. Analyze a Task with AI (Structured JSON + DB Save)
+```bash
+curl -X POST http://127.0.0.1:8000/api/tasks/1/analyze \
+  -H "Accept: application/json"
+```
+**Example Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "id": 1,
+    "task_id": 1,
+    "summary": "Implement OAuth2 authentication via Socialite.",
+    "complexity": "medium",
+    "estimated_hours": 12,
+    "steps": [
+      "Install laravel/socialite package",
+      "Configure OAuth client keys",
+      "Add login and callback routes"
+    ],
+    "risks": [
+      "Handling edge cases when user email is hidden by provider"
+    ],
+    "created_at": "2026-08-31T14:00:00.000000Z",
+    "updated_at": "2026-08-31T14:00:00.000000Z"
+  }
+}
+```
 
-## License
+---
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### 8. Explicitly Create a New Conversation for a Task
+```bash
+curl -X POST http://127.0.0.1:8000/api/tasks/1/conversations \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "title": "Architecture Discussion"
+  }'
+```
+
+### 9. List All Conversations for a Task
+```bash
+curl -X GET http://127.0.0.1:8000/api/tasks/1/conversations \
+  -H "Accept: application/json"
+```
+
+---
+
+### 10. AI Task Chat (Normal JSON Response)
+```bash
+curl -X POST http://127.0.0.1:8000/api/tasks/1/chat \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "conversation_id": "0194a3b8-7c82-7000-8000-123456789abc",
+    "message": "How should I start implementing security for this task?"
+  }'
+```
+
+---
+
+### 11. Real-Time AI Chat Streaming (Server-Sent Events)
+```bash
+curl -N -X POST http://127.0.0.1:8000/api/tasks/1/chat/stream \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "conversation_id": "0194a3b8-7c82-7000-8000-123456789abc",
+    "message": "Explain how I should test this implementation step by step."
+  }'
+```
+**Streamed SSE Data Output:**
+```http
+data: {"type":"stream_start","provider":"gemini","model":"gemini-3.1-flash-lite"}
+
+data: {"type":"text_delta","content":"To "}
+
+data: {"type":"text_delta","content":"test "}
+
+data: {"type":"text_delta","content":"this "}
+
+data: {"type":"text_delta","content":"feature..."}
+
+data: {"type":"stream_end"}
+
+data: [DONE]
+```
+
+---
+
+## Testing
+
+Run the full PHPUnit test suite covering Tasks CRUD, AI Analysis, Multi-Thread Chat, and Real-time Streaming:
+
+```bash
+php artisan test
+```
