@@ -9,6 +9,7 @@ use Illuminate\Validation\ValidationException;
 use Laravel\Ai\Contracts\ConversationStore;
 use Laravel\Ai\Models\Conversation;
 use Laravel\Ai\Responses\AgentResponse;
+use Laravel\Ai\Responses\QueuedAgentResponse;
 
 class TaskChatService
 {
@@ -110,6 +111,32 @@ class TaskChatService
         return $agent
             ->continue($newConversationId)
             ->prompt($message);
+    }
+
+    /**
+     * Queue a message to the global AI agent chat.
+     * If conversation_id is provided, continue it in background.
+     * If omitted, explicitly start a brand new global conversation and queue it.
+     */
+    public function queueGlobalChat(string $message, ?string $conversationId = null): QueuedAgentResponse
+    {
+        $agent = TaskChatAgent::make();
+
+        if ($conversationId !== null) {
+            return $agent
+                ->continue($conversationId)
+                ->queue($message);
+        }
+
+        $newConversationId = $this->conversationStore->storeConversation(
+            null,
+            null,
+            'Global AI Agent Chat'
+        );
+
+        return $agent
+            ->continue($newConversationId)
+            ->queue($message);
     }
 
     /**

@@ -1,6 +1,6 @@
 # Laravel AI Task Manager
 
-An API-only Laravel application integrating the official `laravel/ai` SDK with Google Gemini (`gemini-3.1-flash-lite`) for intelligent task management, structured analysis, multi-thread chat conversations, real-time Server-Sent Events (SSE) streaming, and autonomous AI Agent tool calls.
+An API-only Laravel application integrating the official `laravel/ai` SDK with Google Gemini (`gemini-3.1-flash-lite`) for intelligent task management, structured analysis, multi-thread chat conversations, real-time Server-Sent Events (SSE) streaming, autonomous AI Agent tool calls, and background queue processing.
 
 ---
 
@@ -53,109 +53,137 @@ An API-only Laravel application integrating the official `laravel/ai` SDK with G
 - Added **Global AI Agent Endpoints** (`POST /api/agent/chat` & `POST /api/agent/chat/stream`) allowing project-wide AI task management without specifying `{task}` in the URL.
 - Preserved **Task-scoped endpoints** (`POST /api/tasks/{task}/chat`) with security boundary enforcement preventing modification of unrelated tasks inside scoped conversations.
 
+### PART 8 — Asynchronous Queue Processing
+- Offloads long-running AI operations out of the HTTP request lifecycle so endpoints return immediately.
+- **Queued Global AI Agent Endpoint** (`POST /api/agent/chat/queue`):
+  - Uses native Laravel AI SDK `$agent->queue($message)` functionality (`InvokeAgent` job).
+  - Preserves conversation history, tools (`list_tasks`, `get_task`, `create_task`, `update_task`), and execution context.
+- **Queued Task Analysis Endpoint** (`POST /api/tasks/{task}/analyze/queue`):
+  - Dispatches `AnalyzeTaskJob` to process task analysis asynchronously in the background.
+  - Reuses `TaskAnalysisService` and `TaskAnalyzerAgent` for structured JSON output validation and database persistence.
+- **Queue Execution & Retries**:
+  - Uses Laravel's `database` queue driver for local development.
+  - Handles retries (`tries = 3`), timeouts (`timeout = 60`), and logs failed jobs to `failed_jobs` table.
+
+---
+
+## Comparison of AI Execution Modes
+
+| Feature | Synchronous (`POST .../chat`) | Real-Time Stream (`POST .../chat/stream`) | Queued (`POST .../chat/queue`) |
+|---|---|---|---|
+| **Response Time** | Waits for full AI completion | Streams tokens instantly (SSE) | Returns immediately (`status: queued`) |
+| **HTTP Payload** | Single JSON response object | `text/event-stream` chunks | Immediate status confirmation |
+| **Execution Context** | Synchronous HTTP worker | Synchronous HTTP worker | Background Queue Worker (`queue:work`) |
+| **Use Case** | Quick answers / instant UI update | Live typing / interactive chat | Heavy operations / background tasks |
+
+---
+
+## Architecture Diagram
+
+```
+                 HTTP LAYER (Controllers)
+┌───────────────────────────┬────────────────────────────────┬────────────────────────────┐
+│ QueueGlobalAgentChatCtrl  │   QueueAnalyzeTaskController   │   TaskChatController / etc │
+└─────────────┬─────────────┴───────────────┬────────────────┴──────────────┬─────────────┘
+              │                             │                               │
+              ▼                             ▼                               ▼
+  Laravel AI SDK $agent->queue()     AnalyzeTaskJob::dispatch()      Synchronous / Stream
+              │                             │                               │
+              └───────────────┬─────────────┘                               │
+                              ▼                                             │
+                    Laravel Queue Worker                                    │
+                   (php artisan queue:work)                                 │
+                              │                                             │
+                              ▼                                             ▼
+                 ┌──────────────────────────┐                    ┌─────────────────────┐
+                 │ TaskChatAgent / Tools    │                    │ TaskChatService /   │
+                 │ TaskAnalysisService      │                    │ TaskAnalysisService │
+                 └────────────┬─────────────┘                    └──────────┬──────────┘
+                              │                                             │
+                              └──────────────────────┬──────────────────────┘
+                                                     ▼
+                                          Eloquent / MySQL Database
+```
+
 ---
 
 ## API Documentation & cURL Reference
 
-### 1. Test AI Connectivity
+### 1. Queued Global AI Agent Endpoint
 ```bash
-curl -X GET http://127.0.0.1:8000/api/ai-test \
+curl -X POST http://127.0.0.1:8000/api/agent/chat/queue \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "message": "Analyze my pending tasks and suggest what I should work on next."
+  }'
+```
+**Immediate Response (`200 OK`):**
+```json
+{
+  "status": "queued",
+  "message": "AI request has been queued."
+}
+```
+
+---
+
+### 2. Queued Task Analysis Endpoint
+```bash
+curl -X POST http://127.0.0.1:8000/api/tasks/1/analyze/queue \
   -H "Accept: application/json"
 ```
-
-### 2. Tasks CRUD
-```bash
-# Create Task
-curl -X POST http://127.0.0.1:8000/api/tasks \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
-  -d '{"title": "OAuth2 Auth", "description": "Add Google login", "status": "in_progress", "priority": "high"}'
-
-# List Tasks
-curl -X GET http://127.0.0.1:8000/api/tasks -H "Accept: application/json"
-
-# Show Single Task
-curl -X GET http://127.0.0.1:8000/api/tasks/1 -H "Accept: application/json"
-
-# Update Task
-curl -X PUT http://127.0.0.1:8000/api/tasks/1 -H "Content-Type: application/json" -d '{"status": "completed"}'
-
-# Delete Task
-curl -X DELETE http://127.0.0.1:8000/api/tasks/1 -H "Accept: application/json"
+**Immediate Response (`200 OK`):**
+```json
+{
+  "status": "queued",
+  "message": "Task analysis has been queued."
+}
 ```
 
 ---
 
-### 3. Analyze Task with AI
+### 3. How to Start the Queue Worker
+
+To process queued AI jobs locally, run the Laravel queue worker in your terminal:
+
 ```bash
-curl -X POST http://127.0.0.1:8000/api/tasks/1/analyze -H "Accept: application/json"
+php artisan queue:work
+```
+
+To monitor failed jobs or retry them:
+```bash
+# View failed jobs
+php artisan queue:failed
+
+# Retry all failed jobs
+php artisan queue:retry all
 ```
 
 ---
 
-### 4. Global AI Agent Endpoints (Project-Wide Tasks Management)
+### 4. Synchronous & Streaming AI Reference
 
-#### A. Global AI Agent Chat (Create Task / List Tasks / Update Any Task)
+#### Synchronous Global Agent Chat
 ```bash
 curl -X POST http://127.0.0.1:8000/api/agent/chat \
   -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
-  -d '{
-    "message": "Create a high priority task to implement Stripe payments."
-  }'
+  -d '{"message": "Create a high priority task for Stripe payments."}'
 ```
 
-```bash
-curl -X POST http://127.0.0.1:8000/api/agent/chat \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
-  -d '{
-    "message": "Show me all pending tasks."
-  }'
-```
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/agent/chat \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
-  -d '{
-    "message": "Change task 5 status to completed."
-  }'
-```
-
-#### B. Global AI Agent Chat Streaming (SSE Stream)
+#### Real-Time SSE AI Stream
 ```bash
 curl -N -X POST http://127.0.0.1:8000/api/agent/chat/stream \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
-  -d '{
-    "message": "Stream all high priority tasks."
-  }'
-```
-
----
-
-### 5. Task-Scoped AI Chat Endpoints (Bound to Task #1)
-
-```bash
-# Task-Scoped AI Chat
-curl -X POST http://127.0.0.1:8000/api/tasks/1/chat \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
-  -d '{"message": "Change this task status to completed."}'
-
-# Task-Scoped AI Chat Stream
-curl -N -X POST http://127.0.0.1:8000/api/tasks/1/chat/stream \
-  -H "Content-Type: application/json" \
-  -H "Accept: text/event-stream" \
-  -d '{"message": "Explain how to implement this task."}'
+  -d '{"message": "Stream all pending tasks."}'
 ```
 
 ---
 
 ## Testing
 
-Run the full PHPUnit test suite covering Tasks CRUD, AI Analysis, Multi-Thread Chat, Real-Time Streaming, Task-Scoped Security, and Global AI Agent Tools:
+Run the full PHPUnit test suite covering Tasks CRUD, AI Analysis, Multi-Thread Chat, Real-Time Streaming, Task-Scoped Security, Global AI Agent Tools, and Queued AI Operations:
 
 ```bash
 php artisan test
