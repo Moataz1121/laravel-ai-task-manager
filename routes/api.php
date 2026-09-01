@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\AiTestController;
 use App\Http\Controllers\AnalyzeTaskController;
+use App\Http\Controllers\GlobalAgentChatController;
+use App\Http\Controllers\GlobalAgentStreamController;
 use App\Http\Controllers\TaskChatController;
 use App\Http\Controllers\TaskChatStreamController;
 use App\Http\Controllers\TaskConversationController;
@@ -16,3 +18,6 @@ Route::get('/tasks/{task}/conversations', [TaskConversationController::class, 'i
 Route::post('/tasks/{task}/conversations', [TaskConversationController::class, 'store']);
 Route::post('/tasks/{task}/chat', TaskChatController::class);
 Route::post('/tasks/{task}/chat/stream', TaskChatStreamController::class);
+
+Route::post('/agent/chat', GlobalAgentChatController::class);
+Route::post('/agent/chat/stream', GlobalAgentStreamController::class);

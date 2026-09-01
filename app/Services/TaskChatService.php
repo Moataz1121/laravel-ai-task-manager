@@ -87,6 +87,58 @@ class TaskChatService
     }
 
     /**
+     * Send a message to the global AI agent chat.
+     * If conversation_id is provided, continue it.
+     * If omitted, explicitly start a brand new global conversation.
+     */
+    public function globalChat(string $message, ?string $conversationId = null): AgentResponse
+    {
+        $agent = TaskChatAgent::make();
+
+        if ($conversationId !== null) {
+            return $agent
+                ->continue($conversationId)
+                ->prompt($message);
+        }
+
+        $newConversationId = $this->conversationStore->storeConversation(
+            null,
+            null,
+            'Global AI Agent Chat'
+        );
+
+        return $agent
+            ->continue($newConversationId)
+            ->prompt($message);
+    }
+
+    /**
+     * Stream a response from the global AI agent chat.
+     * If conversation_id is provided, continue it.
+     * If omitted, explicitly start a brand new global conversation stream.
+     */
+    public function globalStreamChat(string $message, ?string $conversationId = null): \Laravel\Ai\Responses\StreamableAgentResponse
+    {
+        $agent = TaskChatAgent::make();
+
+        if ($conversationId !== null) {
+            return $agent
+                ->continue($conversationId)
+                ->stream($message);
+        }
+
+        $newConversationId = $this->conversationStore->storeConversation(
+            null,
+            null,
+            'Global AI Agent Chat'
+        );
+
+        return $agent
+            ->continue($newConversationId)
+            ->stream($message);
+    }
+
+    /**
      * Verify that the given conversation_id belongs to the specified task.
      *
      * @throws ValidationException
@@ -104,5 +156,3 @@ class TaskChatService
         }
     }
 }
-
-

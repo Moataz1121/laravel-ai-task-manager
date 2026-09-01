@@ -1,6 +1,6 @@
 # Laravel AI Task Manager
 
-An API-only Laravel application integrating the official `laravel/ai` SDK with Google Gemini (`gemini-3.1-flash-lite`) for intelligent task management, structured analysis, multi-thread chat conversations, and real-time Server-Sent Events (SSE) streaming.
+An API-only Laravel application integrating the official `laravel/ai` SDK with Google Gemini (`gemini-3.1-flash-lite`) for intelligent task management, structured analysis, multi-thread chat conversations, real-time Server-Sent Events (SSE) streaming, and autonomous AI Agent tool calls.
 
 ---
 
@@ -43,6 +43,16 @@ An API-only Laravel application integrating the official `laravel/ai` SDK with G
 - Maintains complete conversation history and auto-saves the full aggregated AI response to database upon stream completion.
 - Endpoint: `POST /api/tasks/{task}/chat/stream`.
 
+### PART 7 — AI Tools & Global AI Agent
+- Equipped `TaskChatAgent` with tool capabilities via `Laravel\Ai\Contracts\HasTools`.
+- Created dedicated Tool classes:
+  - `ListTasksTool` (`list_tasks`): Filter database tasks by status and priority.
+  - `GetTaskTool` (`get_task`): Fetch specific task details by integer ID.
+  - `CreateTaskTool` (`create_task`): Insert new tasks into the database.
+  - `UpdateTaskTool` (`update_task`): Modify existing task records.
+- Added **Global AI Agent Endpoints** (`POST /api/agent/chat` & `POST /api/agent/chat/stream`) allowing project-wide AI task management without specifying `{task}` in the URL.
+- Preserved **Task-scoped endpoints** (`POST /api/tasks/{task}/chat`) with security boundary enforcement preventing modification of unrelated tasks inside scoped conversations.
+
 ---
 
 ## API Documentation & cURL Reference
@@ -53,143 +63,99 @@ curl -X GET http://127.0.0.1:8000/api/ai-test \
   -H "Accept: application/json"
 ```
 
-### 2. Create a Task
+### 2. Tasks CRUD
 ```bash
+# Create Task
 curl -X POST http://127.0.0.1:8000/api/tasks \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
-  -d '{
-    "title": "Implement OAuth2 Authentication",
-    "description": "Add Google and GitHub OAuth logins using Socialite",
-    "status": "in_progress",
-    "priority": "high"
-  }'
+  -d '{"title": "OAuth2 Auth", "description": "Add Google login", "status": "in_progress", "priority": "high"}'
+
+# List Tasks
+curl -X GET http://127.0.0.1:8000/api/tasks -H "Accept: application/json"
+
+# Show Single Task
+curl -X GET http://127.0.0.1:8000/api/tasks/1 -H "Accept: application/json"
+
+# Update Task
+curl -X PUT http://127.0.0.1:8000/api/tasks/1 -H "Content-Type: application/json" -d '{"status": "completed"}'
+
+# Delete Task
+curl -X DELETE http://127.0.0.1:8000/api/tasks/1 -H "Accept: application/json"
 ```
 
-### 3. List All Tasks
+---
+
+### 3. Analyze Task with AI
 ```bash
-curl -X GET http://127.0.0.1:8000/api/tasks \
-  -H "Accept: application/json"
+curl -X POST http://127.0.0.1:8000/api/tasks/1/analyze -H "Accept: application/json"
 ```
 
-### 4. Fetch a Single Task
-```bash
-curl -X GET http://127.0.0.1:8000/api/tasks/1 \
-  -H "Accept: application/json"
-```
+---
 
-### 5. Update a Task
+### 4. Global AI Agent Endpoints (Project-Wide Tasks Management)
+
+#### A. Global AI Agent Chat (Create Task / List Tasks / Update Any Task)
 ```bash
-curl -X PUT http://127.0.0.1:8000/api/tasks/1 \
+curl -X POST http://127.0.0.1:8000/api/agent/chat \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   -d '{
-    "status": "completed"
+    "message": "Create a high priority task to implement Stripe payments."
   }'
 ```
 
-### 6. Delete a Task
 ```bash
-curl -X DELETE http://127.0.0.1:8000/api/tasks/1 \
-  -H "Accept: application/json"
-```
-
----
-
-### 7. Analyze a Task with AI (Structured JSON + DB Save)
-```bash
-curl -X POST http://127.0.0.1:8000/api/tasks/1/analyze \
-  -H "Accept: application/json"
-```
-**Example Response:**
-```json
-{
-  "status": "success",
-  "data": {
-    "id": 1,
-    "task_id": 1,
-    "summary": "Implement OAuth2 authentication via Socialite.",
-    "complexity": "medium",
-    "estimated_hours": 12,
-    "steps": [
-      "Install laravel/socialite package",
-      "Configure OAuth client keys",
-      "Add login and callback routes"
-    ],
-    "risks": [
-      "Handling edge cases when user email is hidden by provider"
-    ],
-    "created_at": "2026-08-31T14:00:00.000000Z",
-    "updated_at": "2026-08-31T14:00:00.000000Z"
-  }
-}
-```
-
----
-
-### 8. Explicitly Create a New Conversation for a Task
-```bash
-curl -X POST http://127.0.0.1:8000/api/tasks/1/conversations \
+curl -X POST http://127.0.0.1:8000/api/agent/chat \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   -d '{
-    "title": "Architecture Discussion"
+    "message": "Show me all pending tasks."
   }'
 ```
 
-### 9. List All Conversations for a Task
 ```bash
-curl -X GET http://127.0.0.1:8000/api/tasks/1/conversations \
-  -H "Accept: application/json"
-```
-
----
-
-### 10. AI Task Chat (Normal JSON Response)
-```bash
-curl -X POST http://127.0.0.1:8000/api/tasks/1/chat \
+curl -X POST http://127.0.0.1:8000/api/agent/chat \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   -d '{
-    "conversation_id": "0194a3b8-7c82-7000-8000-123456789abc",
-    "message": "How should I start implementing security for this task?"
+    "message": "Change task 5 status to completed."
   }'
 ```
 
----
-
-### 11. Real-Time AI Chat Streaming (Server-Sent Events)
+#### B. Global AI Agent Chat Streaming (SSE Stream)
 ```bash
-curl -N -X POST http://127.0.0.1:8000/api/tasks/1/chat/stream \
+curl -N -X POST http://127.0.0.1:8000/api/agent/chat/stream \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
   -d '{
-    "conversation_id": "0194a3b8-7c82-7000-8000-123456789abc",
-    "message": "Explain how I should test this implementation step by step."
+    "message": "Stream all high priority tasks."
   }'
 ```
-**Streamed SSE Data Output:**
-```http
-data: {"type":"stream_start","provider":"gemini","model":"gemini-3.1-flash-lite"}
 
-data: {"type":"text_delta","content":"To "}
+---
 
-data: {"type":"text_delta","content":"test "}
+### 5. Task-Scoped AI Chat Endpoints (Bound to Task #1)
 
-data: {"type":"text_delta","content":"this "}
+```bash
+# Task-Scoped AI Chat
+curl -X POST http://127.0.0.1:8000/api/tasks/1/chat \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"message": "Change this task status to completed."}'
 
-data: {"type":"text_delta","content":"feature..."}
-
-data: {"type":"stream_end"}
-
-data: [DONE]
+# Task-Scoped AI Chat Stream
+curl -N -X POST http://127.0.0.1:8000/api/tasks/1/chat/stream \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{"message": "Explain how to implement this task."}'
 ```
 
 ---
 
 ## Testing
 
-Run the full PHPUnit test suite covering Tasks CRUD, AI Analysis, Multi-Thread Chat, and Real-time Streaming:
+Run the full PHPUnit test suite covering Tasks CRUD, AI Analysis, Multi-Thread Chat, Real-Time Streaming, Task-Scoped Security, and Global AI Agent Tools:
 
 ```bash
 php artisan test
