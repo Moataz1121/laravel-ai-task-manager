@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Ai\Agents\TaskAnalyzerAgent;
+use App\Jobs\AnalyzeTaskJob;
 use App\Models\Task;
 use App\Models\TaskAnalysis;
 use Illuminate\Support\Facades\Validator;
@@ -38,6 +39,20 @@ class TaskAnalysisService
             $validated
         );
     }
+
+    /**
+     * Alias method for analyze.
+     */
+    public function analyzeTask(Task $task): TaskAnalysis
+    {
+        return $this->analyze($task);
+    }
+
+    /**
+     * Queue the AI task analysis background job.
+     */
+    public function queueAnalysis(Task $task): void
+    {
+        AnalyzeTaskJob::dispatch($task);
+    }
 }
-
-
